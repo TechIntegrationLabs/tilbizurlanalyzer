@@ -215,7 +215,6 @@ async function analyzeBusiness({
     // 5. AI Analysis with Claude
     // ----------------------------
     console.log('Performing AI analysis...');
-    // We feed the multi-page content from accumulatedText, truncated to length if needed
     const contentForAI = accumulatedText.slice(0, 15000);
 
     const anthropic = new Anthropic({ apiKey });
@@ -225,19 +224,78 @@ async function analyzeBusiness({
       messages: [
         {
           role: 'user',
-          content: `Analyze this website content and return a JSON object (and only a JSON object) with the following structure:
+          content: `Analyze the following website content and return a JSON object (and ONLY a JSON object) with the following structure:
+
 {
   "basic_info": {
     "business_name": "",
+    "website_url": "",
     "industry": "",
-    "description": "",
+    "business_description": "",
+    "contact_email": "",
+    "phone_number": "",
+    "physical_address": "",
+    "operating_hours": "",
     "business_type": "",
-    "year_established": null
+    "year_established": "",
+    "employee_count_range": ""
   },
-  "products_services": {
-    "main_offerings": [],
-    "pricing_tier": "",
-    "specialties": []
+  "social_presence": {
+    "social_media_links": [],
+    "social_media_platforms": [],
+    "social_media_followers": "",
+    "social_media_engagement_rate": "",
+    "recent_social_media_posts": [],
+    "social_media_hashtags": [],
+    "social_content_themes": "",
+    "platforms": {
+      "twitter": {
+        "present": false,
+        "url": ""
+      },
+      "linkedin": {
+        "present": false,
+        "url": ""
+      },
+      "youtube": {
+        "present": false,
+        "url": ""
+      }
+    },
+    "embedded_content": {
+      "instagram": false,
+      "facebook": false,
+      "twitter": false,
+      "youtube": false,
+      "social_feeds": false
+    },
+    "sharing_options": {
+      "facebook": false,
+      "twitter": false,
+      "linkedin": false,
+      "general_share": false
+    }
+  },
+  "reviews_reputation": {
+    "google_rating": "",
+    "google_review_count": "",
+    "yelp_rating": "",
+    "yelp_review_count": "",
+    "average_rating": "",
+    "total_review_count": "",
+    "review_sentiment": "",
+    "common_praise_points": [],
+    "common_improvement_points": []
+  },
+  "business_operations": {
+    "products_services": [],
+    "price_range": "",
+    "payment_methods": [],
+    "booking_availability": "",
+    "delivery_options": "",
+    "service_areas": [],
+    "languages_supported": [],
+    "business_categories": []
   },
   "target_market": {
     "primary_audience": "",
@@ -248,17 +306,27 @@ async function analyzeBusiness({
     "tone": "",
     "key_messages": [],
     "unique_selling_points": []
+  },
+  "technical_metrics": {
+    "load_time_ms": null,
+    "mobile_friendly": null,
+    "seo_meta_description": "",
+    "technology_stack": {
+      "analytics": []
+    }
   }
 }
 
-Website Content: ${contentForAI}
+Please extract as much information as possible from the text, populating every field above. If any field cannot be determined from the content, return it as empty, null, or an empty array. Return ONLY the JSON object, properly escaped with valid JSON formatting. No additional text or explanation.
 
-Return ONLY the JSON object, no additional text or explanation. Ensure all values are properly escaped and the JSON is valid.`
+Website Content:
+${contentForAI}
+
+Return ONLY the valid JSON object.`
         }
       ]
     });
 
-    // Parse Claude's analysis
     let aiAnalysis;
     try {
       const responseText = message.content[0].text;
@@ -273,19 +341,139 @@ Return ONLY the JSON object, no additional text or explanation. Ensure all value
       aiAnalysis = { error: 'AI analysis failed' };
     }
 
-    bkb.ai_analysis = aiAnalysis;
-
-    // ----------------------------
-    // 6. Add metadata
-    // ----------------------------
-    bkb.metadata = {
-      analysis_date: new Date().toISOString(),
-      analysis_version: '1.1.0',
-      url_analyzed: url,
-      analysis_status: 'complete'
+    // Merge technical metrics with AI analysis
+    aiAnalysis.technical_metrics = {
+      ...aiAnalysis.technical_metrics,
+      load_time_ms: bkb.technical_metrics.performance.page_load_time,
+      mobile_friendly: bkb.technical_metrics.mobile_friendly,
+      seo_meta_description: bkb.technical_metrics.seo.meta_description,
+      technology_stack: {
+        analytics: bkb.technical_metrics.technology_stack.analytics
+      }
     };
 
-    return bkb;
+    // Merge social presence data
+    aiAnalysis.social_presence = {
+      ...aiAnalysis.social_presence,
+      ...bkb.social_presence
+    };
+
+    // Store the analysis results with exact column names
+    const analysisResults = {
+      analysisDate: new Date().toISOString(),
+      urlAnalyzed: url,
+      businessName: bkb.contact_info?.business_name || '',
+      industry: aiAnalysis.basic_info?.industry || '',
+      description: aiAnalysis.basic_info?.description || '',
+      businessType: aiAnalysis.basic_info?.business_type || '',
+      yearEstablished: aiAnalysis.basic_info?.year_established || '',
+      mainOfferings: Array.isArray(aiAnalysis.business_operations?.products_services) 
+        ? aiAnalysis.business_operations.products_services[0] || ''
+        : '',
+      pricingTier: aiAnalysis.business_operations?.price_range || '',
+      specialties: Array.isArray(aiAnalysis.business_operations?.business_categories) 
+        ? aiAnalysis.business_operations.business_categories[0] || ''
+        : '',
+      primaryAudience: aiAnalysis.target_market?.primary_audience || '',
+      demographics: aiAnalysis.target_market?.demographics || '',
+      marketPositioning: aiAnalysis.target_market?.market_positioning || '',
+      brandTone: aiAnalysis.brand_analysis?.tone || '',
+      keyMessages: Array.isArray(aiAnalysis.brand_analysis?.key_messages) 
+        ? aiAnalysis.brand_analysis.key_messages.join(', ') || ''
+        : '',
+      uniqueSellingPoints: Array.isArray(aiAnalysis.brand_analysis?.unique_selling_points)
+        ? aiAnalysis.brand_analysis.unique_selling_points.join(', ') || ''
+        : '',
+      email: Array.isArray(bkb.contact_info?.email) ? bkb.contact_info.email[0] || '' : '',
+      phone: Array.isArray(bkb.contact_info?.phone) ? bkb.contact_info.phone[0] || '' : '',
+      address: Array.isArray(bkb.contact_info?.address) ? bkb.contact_info.address[0] || '' : '',
+      loadTimeMs: bkb.technical_metrics?.performance?.page_load_time || 0,
+      mobileFriendly: bkb.technical_metrics?.mobile_friendly?.viewport_optimization || false,
+      socialPresenceScore: bkb.social_presence?.presence_score || 0,
+      socialPresencePlatformsTwitterPresent: bkb.social_presence?.platforms?.twitter?.present || false,
+      socialPresencePlatformsTwitterUrl: bkb.social_presence?.platforms?.twitter?.url || '',
+      socialPresenceSocialUrlsForDeeperScrape0: bkb.social_presence?.social_urls_for_deeper_scrape?.[0] || '',
+      socialPresenceSocialUrlsForDeeperScrape1: bkb.social_presence?.social_urls_for_deeper_scrape?.[1] || '',
+      socialPresenceSocialUrlsForDeeperScrape2: bkb.social_presence?.social_urls_for_deeper_scrape?.[2] || '',
+      socialPresenceEmbeddedContentInstagram: bkb.social_presence?.embedded_content?.instagram || false,
+      socialPresenceEmbeddedContentFacebook: bkb.social_presence?.embedded_content?.facebook || false,
+      socialPresenceEmbeddedContentTwitter: bkb.social_presence?.embedded_content?.twitter || false,
+      socialPresenceEmbeddedContentYoutube: bkb.social_presence?.embedded_content?.youtube || false,
+      socialPresenceEmbeddedContentSocialFeeds: bkb.social_presence?.embedded_content?.social_feeds || false,
+      socialPresenceSharingOptionsFacebook: bkb.social_presence?.sharing_options?.facebook || false,
+      socialPresenceSharingOptionsTwitter: bkb.social_presence?.sharing_options?.twitter || false,
+      socialPresenceSharingOptionsLinkedin: bkb.social_presence?.sharing_options?.linkedin || false,
+      socialPresenceSharingOptionsGeneralShare: bkb.social_presence?.sharing_options?.general_share || false,
+      contactInfoPhone0: bkb.contact_info?.phone?.[0] || '',
+      contactInfoPhone1: bkb.contact_info?.phone?.[1] || '',
+      contactInfoPhone2: bkb.contact_info?.phone?.[2] || '',
+      contactInfoPhone3: bkb.contact_info?.phone?.[3] || '',
+      contactInfoPhone4: bkb.contact_info?.phone?.[4] || '',
+      contactInfoPhone5: bkb.contact_info?.phone?.[5] || '',
+      contactInfoPhone6: bkb.contact_info?.phone?.[6] || '',
+      contactInfoPhone7: bkb.contact_info?.phone?.[7] || '',
+      contactInfoPhone8: bkb.contact_info?.phone?.[8] || '',
+      contactInfoPhone9: bkb.contact_info?.phone?.[9] || '',
+      contactInfoPhone10: bkb.contact_info?.phone?.[10] || '',
+      contactInfoPhone11: bkb.contact_info?.phone?.[11] || '',
+      contactInfoPhone12: bkb.contact_info?.phone?.[12] || '',
+      aiAnalysisBasicInfoBusinessName: aiAnalysis.basic_info?.business_name || '',
+      aiAnalysisBasicInfoIndustry: aiAnalysis.basic_info?.industry || '',
+      aiAnalysisBasicInfoDescription: aiAnalysis.basic_info?.description || '',
+      aiAnalysisBasicInfoBusinessType: aiAnalysis.basic_info?.business_type || '',
+      aiAnalysisBasicInfoYearEstablished: aiAnalysis.basic_info?.year_established || '',
+      aiAnalysisProductsServicesMainOfferings0: aiAnalysis.business_operations?.products_services?.[0] || '',
+      aiAnalysisProductsServicesMainOfferings1: aiAnalysis.business_operations?.products_services?.[1] || '',
+      aiAnalysisProductsServicesMainOfferings2: aiAnalysis.business_operations?.products_services?.[2] || '',
+      aiAnalysisProductsServicesMainOfferings3: aiAnalysis.business_operations?.products_services?.[3] || '',
+      aiAnalysisProductsServicesMainOfferings4: aiAnalysis.business_operations?.products_services?.[4] || '',
+      aiAnalysisProductsServicesMainOfferings5: aiAnalysis.business_operations?.products_services?.[5] || '',
+      aiAnalysisProductsServicesPricingTier: aiAnalysis.business_operations?.price_range || '',
+      aiAnalysisProductsServicesSpecialties0: aiAnalysis.business_operations?.business_categories?.[0] || '',
+      aiAnalysisProductsServicesSpecialties1: aiAnalysis.business_operations?.business_categories?.[1] || '',
+      aiAnalysisProductsServicesSpecialties2: aiAnalysis.business_operations?.business_categories?.[2] || '',
+      aiAnalysisProductsServicesSpecialties3: aiAnalysis.business_operations?.business_categories?.[3] || '',
+      aiAnalysisTargetMarketPrimaryAudience: aiAnalysis.target_market?.primary_audience || '',
+      aiAnalysisTargetMarketDemographics: aiAnalysis.target_market?.demographics || '',
+      aiAnalysisTargetMarketMarketPositioning: aiAnalysis.target_market?.market_positioning || '',
+      aiAnalysisBrandAnalysisTone: aiAnalysis.brand_analysis?.tone || '',
+      aiAnalysisBrandAnalysisKeyMessages0: aiAnalysis.brand_analysis?.key_messages?.[0] || '',
+      aiAnalysisBrandAnalysisKeyMessages1: aiAnalysis.brand_analysis?.key_messages?.[1] || '',
+      aiAnalysisBrandAnalysisKeyMessages2: aiAnalysis.brand_analysis?.key_messages?.[2] || '',
+      aiAnalysisBrandAnalysisKeyMessages3: aiAnalysis.brand_analysis?.key_messages?.[3] || '',
+      aiAnalysisBrandAnalysisUniqueSellingPoints0: aiAnalysis.brand_analysis?.unique_selling_points?.[0] || '',
+      aiAnalysisBrandAnalysisUniqueSellingPoints1: aiAnalysis.brand_analysis?.unique_selling_points?.[1] || '',
+      aiAnalysisBrandAnalysisUniqueSellingPoints2: aiAnalysis.brand_analysis?.unique_selling_points?.[2] || '',
+      metadataAnalysisDate: new Date().toISOString(),
+      metadataAnalysisVersion: "1.0.0",
+      metadataUrlAnalyzed: url,
+      metadataAnalysisStatus: "completed",
+      technicalMetricsSeoMetaDescription: bkb.technical_metrics?.seo?.meta_description || '',
+      socialPresencePlatformsLinkedinPresent: bkb.social_presence?.platforms?.linkedin?.present || false,
+      socialPresencePlatformsLinkedinUrl: bkb.social_presence?.platforms?.linkedin?.url || '',
+      socialPresencePlatformsYoutubePresent: bkb.social_presence?.platforms?.youtube?.present || false,
+      socialPresencePlatformsYoutubeUrl: bkb.social_presence?.platforms?.youtube?.url || '',
+      technicalMetricsTechnologyStackAnalytics0: bkb.technical_metrics?.technology_stack?.analytics?.[0] || '',
+      technicalMetricsTechnologyStackAnalytics1: bkb.technical_metrics?.technology_stack?.analytics?.[1] || '',
+      contactInfoEmail0: bkb.contact_info?.email?.[0] || '',
+      contactInfoAddress0: bkb.contact_info?.address?.[0] || '',
+      contactInfoAddress1: bkb.contact_info?.address?.[1] || '',
+      all: JSON.stringify({
+        metadata: {
+          analysis_date: new Date().toISOString(),
+          analysis_version: "1.0.0",
+          url_analyzed: url,
+          analysis_status: "completed"
+        },
+        technical_metrics: bkb.technical_metrics,
+        social_presence: bkb.social_presence,
+        contact_info: bkb.contact_info,
+        ai_analysis: aiAnalysis,
+        raw_text: accumulatedText
+      })
+    };
+
+    return analysisResults;
 
   } catch (error) {
     console.error('Analysis error:', error);

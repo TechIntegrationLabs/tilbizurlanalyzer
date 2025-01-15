@@ -158,7 +158,8 @@ class GoogleSheetsService {
         'technicalMetricsTechnologyStackAnalytics1',
         'contactInfoEmail0',
         'contactInfoAddress0',
-        'contactInfoAddress1'
+        'contactInfoAddress1',
+        'all'
       ];
 
       // Update the header row
@@ -216,74 +217,8 @@ class GoogleSheetsService {
 
   async appendAnalysis(analysis) {
     try {
-      const rowData = [
-        getValueFromPath(analysis, 'metadata.analysis_date'),
-        getValueFromPath(analysis, 'metadata.url_analyzed'),
-        getValueFromPath(analysis, 'basic_info.business_name'),
-        getValueFromPath(analysis, 'basic_info.industry'),
-        getValueFromPath(analysis, 'basic_info.description'),
-        getValueFromPath(analysis, 'basic_info.business_type'),
-        getValueFromPath(analysis, 'basic_info.year_established'),
-        getValueFromPath(analysis, 'products_services.main_offerings'),
-        getValueFromPath(analysis, 'products_services.pricing_tier'),
-        getValueFromPath(analysis, 'products_services.specialties'),
-        getValueFromPath(analysis, 'target_market.primary_audience'),
-        getValueFromPath(analysis, 'target_market.demographics'),
-        getValueFromPath(analysis, 'target_market.market_positioning'),
-        getValueFromPath(analysis, 'brand_analysis.tone'),
-        getValueFromPath(analysis, 'brand_analysis.key_messages'),
-        getValueFromPath(analysis, 'brand_analysis.unique_selling_points'),
-        getValueFromPath(analysis, 'contact_info.email'),
-        getValueFromPath(analysis, 'contact_info.phone'),
-        getValueFromPath(analysis, 'contact_info.address'),
-        getValueFromPath(analysis, 'technical_metrics.load_time_ms'),
-        getValueFromPath(analysis, 'technical_metrics.mobile_friendly'),
-        getValueFromPath(analysis, 'social_presence.presence_score'),
-        getValueFromPath(analysis, 'social_presence.platforms.twitter.present'),
-        getValueFromPath(analysis, 'social_presence.platforms.twitter.url'),
-        getValueFromPath(analysis, 'social_presence.presence_score'),
-        getArrayElement(analysis, 'social_presence.social_urls_for_deeper_scrape', 0),
-        getArrayElement(analysis, 'social_presence.social_urls_for_deeper_scrape', 1),
-        getArrayElement(analysis, 'social_presence.social_urls_for_deeper_scrape', 2),
-        getValueFromPath(analysis, 'social_presence.embedded_content.instagram'),
-        getValueFromPath(analysis, 'social_presence.embedded_content.facebook'),
-        getValueFromPath(analysis, 'social_presence.embedded_content.twitter'),
-        getValueFromPath(analysis, 'social_presence.embedded_content.youtube'),
-        getValueFromPath(analysis, 'social_presence.embedded_content.social_feeds'),
-        getValueFromPath(analysis, 'social_presence.sharing_options.facebook'),
-        getValueFromPath(analysis, 'social_presence.sharing_options.twitter'),
-        getValueFromPath(analysis, 'social_presence.sharing_options.linkedin'),
-        getValueFromPath(analysis, 'social_presence.sharing_options.general_share'),
-        ...Array.from({ length: 13 }, (_, i) => getArrayElement(analysis, 'contact_info.phone', i)),
-        getValueFromPath(analysis, 'ai_analysis.basic_info.business_name'),
-        getValueFromPath(analysis, 'ai_analysis.basic_info.industry'),
-        getValueFromPath(analysis, 'ai_analysis.basic_info.description'),
-        getValueFromPath(analysis, 'ai_analysis.basic_info.business_type'),
-        getValueFromPath(analysis, 'ai_analysis.basic_info.year_established'),
-        ...Array.from({ length: 6 }, (_, i) => getArrayElement(analysis, 'ai_analysis.products_services.main_offerings', i)),
-        getValueFromPath(analysis, 'ai_analysis.products_services.pricing_tier'),
-        ...Array.from({ length: 4 }, (_, i) => getArrayElement(analysis, 'ai_analysis.products_services.specialties', i)),
-        getValueFromPath(analysis, 'ai_analysis.target_market.primary_audience'),
-        getValueFromPath(analysis, 'ai_analysis.target_market.demographics'),
-        getValueFromPath(analysis, 'ai_analysis.target_market.market_positioning'),
-        getValueFromPath(analysis, 'ai_analysis.brand_analysis.tone'),
-        ...Array.from({ length: 4 }, (_, i) => getArrayElement(analysis, 'ai_analysis.brand_analysis.key_messages', i)),
-        ...Array.from({ length: 3 }, (_, i) => getArrayElement(analysis, 'ai_analysis.brand_analysis.unique_selling_points', i)),
-        getValueFromPath(analysis, 'metadata.analysis_date'),
-        getValueFromPath(analysis, 'metadata.analysis_version'),
-        getValueFromPath(analysis, 'metadata.url_analyzed'),
-        getValueFromPath(analysis, 'metadata.analysis_status'),
-        getValueFromPath(analysis, 'technical_metrics.seo_meta_description'),
-        getValueFromPath(analysis, 'social_presence.platforms.linkedin.present'),
-        getValueFromPath(analysis, 'social_presence.platforms.linkedin.url'),
-        getValueFromPath(analysis, 'social_presence.platforms.youtube.present'),
-        getValueFromPath(analysis, 'social_presence.platforms.youtube.url'),
-        getArrayElement(analysis, 'technical_metrics.technology_stack.analytics', 0),
-        getArrayElement(analysis, 'technical_metrics.technology_stack.analytics', 1),
-        getArrayElement(analysis, 'contact_info.email', 0),
-        getArrayElement(analysis, 'contact_info.address', 0),
-        getArrayElement(analysis, 'contact_info.address', 1)
-      ];
+      // Create row data directly from the analysis object's properties
+      const rowData = Object.values(analysis);
 
       // Append the row
       await this.sheets.spreadsheets.values.append({
