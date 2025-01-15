@@ -59,6 +59,80 @@ const SELECTORS = {
   }
 };
 
+/**
+ * Recursive or multi-page crawling logic
+ * @param {Object} browser
+ * @param {String} url
+ * @param {Object} visited - A set/dict of visited URLs to prevent re-visits
+ * @param {Number} depth - The current depth of the crawl
+ * @param {Number} maxDepth - The maximum depth to crawl
+ * @returns {String} - Accumulated text from all visited pages
+ */
+async function crawlSite({ browser, url, visited, depth, maxDepth = 1 }) {
+  if (depth > maxDepth || visited[url]) return ''; // limit depth or avoid re-visiting
+  
+  visited[url] = true;
+  
+  // Open a new page
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1920, height: 1080 });
+  
+  try {
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+    
+    // Extract visible text from the page
+    const pageText = await page.evaluate(() => {
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+      let text = '';
+      let node;
+      while ((node = walker.nextNode())) {
+        if (
+          node.parentElement &&
+          node.parentElement.offsetHeight > 0 &&
+          node.textContent.trim()
+        ) {
+          text += node.textContent.trim() + ' ';
+        }
+      }
+      return text;
+    });
+    
+    // Optionally collect more links (if maxDepth > 0)
+    let subLinksText = '';
+    if (depth < maxDepth) {
+      const links = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('a[href]'))
+          .map(link => link.href)
+          .filter(href => href.startsWith(window.location.origin))
+      );
+      
+      // Recursively crawl child links
+      for (const link of links) {
+        subLinksText += await crawlSite({
+          browser,
+          url: link,
+          visited,
+          depth: depth + 1,
+          maxDepth
+        });
+      }
+    }
+    
+    await page.close();
+    return pageText + '\n' + subLinksText;
+    
+  } catch (err) {
+    console.warn(`Error crawling ${url}:`, err.message);
+    try { await page.close(); } catch {}
+    return '';
+  }
+}
+
 async function analyzeBusiness({
   url,
   apiKey,
@@ -70,12 +144,13 @@ async function analyzeBusiness({
   }
 
   const defaultOptions = {
-    headless: "new",
+    headless: 'new',
     timeout: 60000,
     waitUntil: 'networkidle0',
     measurePerformance: true,
     checkSocial: true,
-    checkTechnical: true
+    checkTechnical: true,
+    crawlDepth: 0 // set how deep you want to crawl internally
   };
   
   const config = { ...defaultOptions, ...options };
@@ -90,114 +165,122 @@ async function analyzeBusiness({
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    
-    // Navigate to page
-    console.log('Navigating to website...');
-    await page.goto(url, { 
-      waitUntil: 'networkidle0',
-      timeout: config.timeout 
+    // ----------------------------
+    // 1. Crawl the site to gather text (multi-page if desired)
+    // ----------------------------
+    console.log('Navigating (and possibly crawling) to website...');
+    const visitedUrls = {};
+    const accumulatedText = await crawlSite({
+      browser,
+      url,
+      visited: visitedUrls,
+      depth: 0,
+      maxDepth: config.crawlDepth
     });
 
-    // Technical Analysis
+    // After crawling, we have potentially multiple pages of text in `accumulatedText`
+
+    // ----------------------------
+    // 2. Analyze Technical Metrics on the main page (if enabled)
+    // ----------------------------
     if (config.checkTechnical) {
-      console.log('Analyzing technical metrics...');
-      bkb.technical_metrics = await analyzeTechnicalMetrics(page);
+      console.log('Analyzing technical metrics (main page)...');
+      const mainPage = await browser.newPage();
+      await mainPage.goto(url, { waitUntil: 'networkidle0', timeout: config.timeout });
+      bkb.technical_metrics = await analyzeTechnicalMetrics(mainPage);
+      await mainPage.close();
     }
 
-    // Social Media Analysis
+    // ----------------------------
+    // 3. Analyze Social Presence (just main page)
+    // ----------------------------
     if (config.checkSocial) {
       console.log('Analyzing social media presence...');
-      bkb.social_presence = await analyzeSocialPresence(page);
+      const socialPage = await browser.newPage();
+      await socialPage.goto(url, { waitUntil: 'networkidle0', timeout: config.timeout });
+      bkb.social_presence = await analyzeSocialPresence(socialPage);
+      await socialPage.close();
     }
 
-    // Extract contact information
+    // ----------------------------
+    // 4. Extract Contact Information
+    // ----------------------------
     console.log('Extracting contact information...');
-    bkb.contact_info = await extractContactInfo(page);
+    const contactPage = await browser.newPage();
+    await contactPage.goto(url, { waitUntil: 'networkidle0', timeout: config.timeout });
+    bkb.contact_info = await extractContactInfo(contactPage);
+    await contactPage.close();
 
-    // Extract visible content for AI analysis
-    console.log('Extracting page content...');
-    const visibleText = await page.evaluate(() => {
-      const walker = document.createTreeWalker(
-        document.body,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
-      let text = '';
-      let node;
-      while (node = walker.nextNode()) {
-        if (node.parentElement.offsetHeight > 0 && node.textContent.trim()) {
-          text += node.textContent.trim() + ' ';
-        }
-      }
-      return text;
-    });
-
-    // AI Analysis with Claude
+    // ----------------------------
+    // 5. AI Analysis with Claude
+    // ----------------------------
     console.log('Performing AI analysis...');
+    // We feed the multi-page content from accumulatedText, truncated to length if needed
+    const contentForAI = accumulatedText.slice(0, 15000);
+
     const anthropic = new Anthropic({ apiKey });
     const message = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
+      model: 'claude-3-haiku-20240307',
       max_tokens: 4096,
-      messages: [{
-        role: "user",
-        content: `Analyze this website content and return a JSON object (and only a JSON object) with the following structure:
+      messages: [
         {
-          "basic_info": {
-            "business_name": "",
-            "industry": "",
-            "description": "",
-            "business_type": "",
-            "year_established": null
-          },
-          "products_services": {
-            "main_offerings": [],
-            "pricing_tier": "",
-            "specialties": []
-          },
-          "target_market": {
-            "primary_audience": "",
-            "demographics": "",
-            "market_positioning": ""
-          },
-          "brand_analysis": {
-            "tone": "",
-            "key_messages": [],
-            "unique_selling_points": []
-          }
-        }
+          role: 'user',
+          content: `Analyze this website content and return a JSON object (and only a JSON object) with the following structure:
+{
+  "basic_info": {
+    "business_name": "",
+    "industry": "",
+    "description": "",
+    "business_type": "",
+    "year_established": null
+  },
+  "products_services": {
+    "main_offerings": [],
+    "pricing_tier": "",
+    "specialties": []
+  },
+  "target_market": {
+    "primary_audience": "",
+    "demographics": "",
+    "market_positioning": ""
+  },
+  "brand_analysis": {
+    "tone": "",
+    "key_messages": [],
+    "unique_selling_points": []
+  }
+}
 
-        Website Content: ${visibleText.slice(0, 15000)}
-        
-        Return ONLY the JSON object, no additional text or explanation. Ensure all values are properly escaped and the JSON is valid.`
-      }]
+Website Content: ${contentForAI}
+
+Return ONLY the JSON object, no additional text or explanation. Ensure all values are properly escaped and the JSON is valid.`
+        }
+      ]
     });
 
     // Parse Claude's analysis
+    let aiAnalysis;
     try {
       const responseText = message.content[0].text;
-      // Find the first occurrence of a JSON object
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        try {
-          const aiAnalysis = JSON.parse(jsonMatch[0]);
-          bkb.ai_analysis = aiAnalysis;
-        } catch (parseError) {
-          console.warn('Could not parse AI analysis JSON:', parseError.message);
-          bkb.ai_analysis = { error: 'Failed to parse AI analysis' };
-        }
+        aiAnalysis = JSON.parse(jsonMatch[0]);
+      } else {
+        aiAnalysis = { error: 'No valid JSON object found in AI response' };
       }
     } catch (error) {
       console.warn('Error processing AI analysis:', error.message);
-      bkb.ai_analysis = { error: 'AI analysis failed' };
+      aiAnalysis = { error: 'AI analysis failed' };
     }
 
-    // Add metadata
+    bkb.ai_analysis = aiAnalysis;
+
+    // ----------------------------
+    // 6. Add metadata
+    // ----------------------------
     bkb.metadata = {
       analysis_date: new Date().toISOString(),
-      analysis_version: "1.0.0",
+      analysis_version: '1.1.0',
       url_analyzed: url,
       analysis_status: 'complete'
     };
@@ -285,10 +368,10 @@ async function analyzeTechnicalMetrics(page) {
           h3: document.querySelectorAll('h3').length
         },
         image_alt_texts: Array.from(document.images).filter(img => img.alt).length,
-        internal_links: Array.from(document.links).filter(link => 
+        internal_links: Array.from(document.links).filter(link =>
           link.hostname === window.location.hostname
         ).length,
-        external_links: Array.from(document.links).filter(link => 
+        external_links: Array.from(document.links).filter(link =>
           link.hostname !== window.location.hostname
         ).length
       };
@@ -304,7 +387,8 @@ async function analyzeTechnicalMetrics(page) {
 async function analyzeSocialPresence(page) {
   const social = {
     platforms: {},
-    presence_score: 0
+    presence_score: 0,
+    social_urls_for_deeper_scrape: []
   };
   
   try {
@@ -312,10 +396,13 @@ async function analyzeSocialPresence(page) {
     for (const [platform, selector] of Object.entries(SELECTORS.SOCIAL_MEDIA)) {
       const links = await page.$$(selector);
       if (links.length > 0) {
+        // get href from first matched link
+        const href = await page.evaluate(el => el.href, links[0]);
         social.platforms[platform] = {
           present: true,
-          url: await page.evaluate(el => el.href, links[0])
+          url: href
         };
+        social.social_urls_for_deeper_scrape.push(href);
         social.presence_score += 1;
       }
     }
@@ -374,7 +461,11 @@ async function extractContactInfo(page) {
       for (const el of elements) {
         const text = await page.evaluate(el => el.textContent, el);
         const href = await page.evaluate(el => el.href, el);
-        if (text.match(/[\d\-\(\)\.]{10,}/) || (href && href.includes('tel:'))) {
+        // basic phone matching
+        if (
+          text.match(/[\d\-\(\)\.\s]{7,}/) || // allow parentheses, dashes, etc.
+          (href && href.includes('tel:'))
+        ) {
           contactInfo.phone.push(text.trim());
         }
       }
@@ -384,7 +475,8 @@ async function extractContactInfo(page) {
     const addressElements = await page.$$(SELECTORS.BUSINESS.address);
     for (const el of addressElements) {
       const text = await page.evaluate(el => el.textContent, el);
-      if (text.length > 10) { // Basic filter for address-like content
+      // Basic filter for address-like content
+      if (text.trim().length > 10) {
         contactInfo.address.push(text.trim());
       }
     }

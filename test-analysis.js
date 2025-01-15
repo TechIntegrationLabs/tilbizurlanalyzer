@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { analyzeBusiness } from './business-analyzer.js';
+import { saveAnalysis } from './db.js';
 
 async function runTest() {
   try {
@@ -14,9 +15,15 @@ async function runTest() {
       }
     });
 
-    // Format the output nicely
+    // Format and display the output
     console.log(JSON.stringify(bkb, null, 2));
     console.log('\n=== Analysis Complete ===\n');
+
+    // Save to MongoDB
+    console.log('Saving to MongoDB...');
+    await saveAnalysis(bkb);
+    console.log('Successfully saved to MongoDB');
+
   } catch (error) {
     console.error('Error during analysis:', error);
   }
