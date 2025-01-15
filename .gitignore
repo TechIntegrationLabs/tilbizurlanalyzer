@@ -1,0 +1,11 @@
+# Environment variables
+.env
+
+# Notes file containing sensitive information
+notes
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
