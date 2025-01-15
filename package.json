@@ -5,7 +5,8 @@
   "main": "business-analyzer.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node test-analysis.js"
+    "start": "node server.js",
+    "analyze": "node test-analysis.js"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +14,11 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.18.0",
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
     "mongodb": "^6.12.0",
     "mongoose": "^8.9.5",
     "puppeteer": "^22.15.0",
