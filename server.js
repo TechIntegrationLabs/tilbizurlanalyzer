@@ -15,7 +15,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--5173--1b4252dd.local-credentialless.webcontainer-api.io',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
