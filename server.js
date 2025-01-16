@@ -14,16 +14,28 @@ const __dirname = dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
+// Middleware: Debugging
+app.use((req, res, next) => {
+  console.log(`[DEBUG] ${req.method} request to ${req.url}`);
+  console.log(`[DEBUG] Headers:`, req.headers);
+  next();
+});
+
+// Middleware: CORS
 app.use(cors({
-  origin: 'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--5173--1b4252dd.local-credentialless.webcontainer-api.io',
+  origin: [
+    'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--5173--1b4252dd.local-credentialless.webcontainer-api.io',
+    'https://bizanal.evolvmybiz.com' // Add other origins here if necessary
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
+
+// Middleware: JSON Parsing
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
-// Function to send data to Make.com webhook
+// Function: Send data to Make.com webhook
 async function sendToMake(data) {
   try {
     if (!process.env.MAKE_WEBHOOK_URL) {
@@ -33,9 +45,7 @@ async function sendToMake(data) {
 
     const response = await fetch(process.env.MAKE_WEBHOOK_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
 
@@ -49,16 +59,12 @@ async function sendToMake(data) {
   }
 }
 
-// POST /analyze endpoint
+// POST /analyze: Submit a new analysis request
 app.post('/analyze', async (req, res) => {
   try {
     const { url } = req.body;
-    
-    if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
-    }
+    if (!url) return res.status(400).json({ error: 'URL is required' });
 
-    // Create initial analysis record
     const db = await getDatabase();
     const initialAnalysis = {
       url,
@@ -69,7 +75,7 @@ app.post('/analyze', async (req, res) => {
     const result = await db.collection('business_analyses').insertOne(initialAnalysis);
     const analysisId = result.insertedId;
 
-    // Start analysis asynchronously
+    // Asynchronous analysis process
     (async () => {
       try {
         console.log(`Starting analysis for URL: ${url}`);
@@ -83,94 +89,53 @@ app.post('/analyze', async (req, res) => {
           }
         });
 
-        // Save to MongoDB
         await db.collection('business_analyses').updateOne(
           { _id: analysisId },
-          { 
-            $set: {
-              ...analysis,
-              status: 'completed',
-              completedTime: new Date()
-            }
-          }
+          { $set: { ...analysis, status: 'completed', completedTime: new Date() } }
         );
 
-        // Send to Make.com webhook
         await sendToMake(analysis);
-
       } catch (error) {
         console.error('Analysis error:', error);
-        // Update MongoDB with error status
         await db.collection('business_analyses').updateOne(
           { _id: analysisId },
-          { 
-            $set: {
-              status: 'error',
-              error: error.message,
-              completedTime: new Date()
-            }
-          }
+          { $set: { status: 'error', error: error.message, completedTime: new Date() } }
         );
       }
     })();
 
-    // Return analysis ID immediately
-    res.json({
-      status: 'processing',
-      analysisId: analysisId.toString()
-    });
-
+    res.json({ status: 'processing', analysisId: analysisId.toString() });
   } catch (error) {
     console.error('Request error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: error.message
-    });
+    res.status(500).json({ status: 'error', message: error.message });
   }
 });
 
-// GET /status/:analysisId endpoint
+// GET /status/:analysisId: Check analysis status
 app.get('/status/:analysisId', async (req, res) => {
   try {
     const { analysisId } = req.params;
-    
     if (!ObjectId.isValid(analysisId)) {
       return res.status(400).json({ error: 'Invalid analysis ID' });
     }
 
     const db = await getDatabase();
-    const analysis = await db.collection('business_analyses')
-      .findOne({ _id: new ObjectId(analysisId) });
-    
-    if (!analysis) {
-      return res.status(404).json({ error: 'Analysis not found' });
-    }
+    const analysis = await db.collection('business_analyses').findOne({ _id: new ObjectId(analysisId) });
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
 
-    // Format response based on status
     const response = {
       status: analysis.status,
       startTime: analysis.startTime,
       completedTime: analysis.completedTime
     };
 
-    // Include error if present
-    if (analysis.error) {
-      response.error = analysis.error;
-    }
-
-    // Include results if completed
-    if (analysis.status === 'completed') {
-      response.data = analysis;
-    }
+    if (analysis.error) response.error = analysis.error;
+    if (analysis.status === 'completed') response.data = analysis;
 
     res.json(response);
-
   } catch (error) {
     console.error('Status check error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: error.message
-    });
+    res.status(500).json({ status: 'error', message: error.message });
   }
 });
 
