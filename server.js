@@ -7,6 +7,7 @@ import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fetch from 'node-fetch';
+import { ObjectId } from 'mongodb';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -45,8 +46,8 @@ async function sendToMake(data) {
   }
 }
 
-// API endpoint to analyze a URL
-app.post('/api/analyze', async (req, res) => {
+// POST /analyze endpoint
+app.post('/analyze', async (req, res) => {
   try {
     const { url } = req.body;
     
@@ -54,35 +55,73 @@ app.post('/api/analyze', async (req, res) => {
       return res.status(400).json({ error: 'URL is required' });
     }
 
-    // Start analysis
-    console.log(`Starting analysis for URL: ${url}`);
-    const analysis = await analyzeBusiness({
+    // Create initial analysis record
+    const db = await getDatabase();
+    const initialAnalysis = {
       url,
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      options: {
-        checkSocial: true,
-        checkTechnical: true,
-        timeout: 90000
+      status: 'processing',
+      startTime: new Date(),
+      error: null
+    };
+    const result = await db.collection('business_analyses').insertOne(initialAnalysis);
+    const analysisId = result.insertedId;
+
+    // Start analysis asynchronously
+    (async () => {
+      try {
+        console.log(`Starting analysis for URL: ${url}`);
+        const analysis = await analyzeBusiness({
+          url,
+          apiKey: process.env.ANTHROPIC_API_KEY,
+          options: {
+            checkSocial: true,
+            checkTechnical: true,
+            timeout: 90000
+          }
+        });
+
+        // Save to MongoDB
+        await db.collection('business_analyses').updateOne(
+          { _id: analysisId },
+          { 
+            $set: {
+              ...analysis,
+              status: 'completed',
+              completedTime: new Date()
+            }
+          }
+        );
+
+        // Save to Google Sheets
+        await sheetsService.appendAnalysis(analysis);
+
+        // Send to Make.com webhook
+        await sendToMake(analysis);
+
+      } catch (error) {
+        console.error('Analysis error:', error);
+        // Update MongoDB with error status
+        await db.collection('business_analyses').updateOne(
+          { _id: analysisId },
+          { 
+            $set: {
+              status: 'error',
+              error: error.message,
+              completedTime: new Date()
+            }
+          }
+        );
       }
-    });
+    })();
 
-    // Save to MongoDB
-    await saveAnalysis(analysis);
-
-    // Save to Google Sheets
-    await sheetsService.appendAnalysis(analysis);
-
-    // Send to Make.com webhook
-    await sendToMake(analysis);
-
-    // Return results
+    // Return analysis ID immediately
     res.json({
-      status: 'success',
-      data: analysis
+      status: 'processing',
+      analysisId: analysisId.toString()
     });
 
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('Request error:', error);
     res.status(500).json({
       status: 'error',
       message: error.message
@@ -90,21 +129,44 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
-// Get all analyses from MongoDB
-app.get('/api/analyses', async (req, res) => {
+// GET /status/:analysisId endpoint
+app.get('/status/:analysisId', async (req, res) => {
   try {
-    const db = await getDatabase();
-    const analyses = await db.collection('business_analyses')
-      .find({})
-      .sort({ 'metadata.analysis_date': -1 })
-      .limit(100)
-      .toArray();
+    const { analysisId } = req.params;
     
-    res.json({
-      status: 'success',
-      data: analyses
-    });
+    if (!ObjectId.isValid(analysisId)) {
+      return res.status(400).json({ error: 'Invalid analysis ID' });
+    }
+
+    const db = await getDatabase();
+    const analysis = await db.collection('business_analyses')
+      .findOne({ _id: new ObjectId(analysisId) });
+    
+    if (!analysis) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+
+    // Format response based on status
+    const response = {
+      status: analysis.status,
+      startTime: analysis.startTime,
+      completedTime: analysis.completedTime
+    };
+
+    // Include error if present
+    if (analysis.error) {
+      response.error = analysis.error;
+    }
+
+    // Include results if completed
+    if (analysis.status === 'completed') {
+      response.data = analysis;
+    }
+
+    res.json(response);
+
   } catch (error) {
+    console.error('Status check error:', error);
     res.status(500).json({
       status: 'error',
       message: error.message
