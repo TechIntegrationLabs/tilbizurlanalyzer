@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { analyzeBusiness } from './business-analyzer.js';
 import { saveAnalysis, getDatabase } from './db.js';
-import { sheetsService } from './sheets.js';
 import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -92,9 +91,6 @@ app.post('/analyze', async (req, res) => {
           }
         );
 
-        // Save to Google Sheets
-        await sheetsService.appendAnalysis(analysis);
-
         // Send to Make.com webhook
         await sendToMake(analysis);
 
@@ -175,12 +171,6 @@ app.get('/status/:analysisId', async (req, res) => {
 });
 
 // Start server
-app.listen(port, async () => {
+app.listen(port, () => {
   console.log(`Server running on port ${port}`);
-  try {
-    await sheetsService.initializeSheet();
-    console.log('Google Sheets initialized');
-  } catch (error) {
-    console.error('Failed to initialize Google Sheets:', error);
-  }
 });

@@ -30,7 +30,7 @@
         <div id="loading" class="hidden">
             <div class="flex justify-center items-center space-x-2">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span class="text-gray-600">Analyzing website...</span>
+                <span id="loadingText" class="text-gray-600">Starting analysis...</span>
             </div>
         </div>
 
@@ -42,20 +42,56 @@
     </div>
 
     <script>
+        let analysisInterval;
+
+        async function checkAnalysisStatus(analysisId) {
+            try {
+                const response = await fetch(`http://localhost:3000/status/${analysisId}`);
+                const data = await response.json();
+                
+                const loadingText = document.getElementById('loadingText');
+                
+                if (data.status === 'completed') {
+                    clearInterval(analysisInterval);
+                    displayResults(data);
+                } else if (data.status === 'error') {
+                    clearInterval(analysisInterval);
+                    throw new Error(data.error || 'Analysis failed');
+                } else {
+                    loadingText.textContent = 'Analyzing website...';
+                }
+            } catch (error) {
+                clearInterval(analysisInterval);
+                throw error;
+            }
+        }
+
+        function displayResults(data) {
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const resultsJson = document.getElementById('resultsJson');
+            
+            loading.classList.add('hidden');
+            results.classList.remove('hidden');
+            resultsJson.textContent = JSON.stringify(data, null, 2);
+        }
+
         document.getElementById('analyzeForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const url = document.getElementById('url').value;
             const loading = document.getElementById('loading');
             const results = document.getElementById('results');
-            const resultsJson = document.getElementById('resultsJson');
+            const loadingText = document.getElementById('loadingText');
             
             // Show loading, hide results
             loading.classList.remove('hidden');
             results.classList.add('hidden');
+            loadingText.textContent = 'Starting analysis...';
             
             try {
-                const response = await fetch('http://localhost:3000/api/analyze', {
+                // Start analysis
+                const response = await fetch('http://localhost:3000/analyze', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -65,17 +101,18 @@
                 
                 const data = await response.json();
                 
-                // Hide loading, show results
-                loading.classList.add('hidden');
-                results.classList.remove('hidden');
-                
-                // Display formatted JSON
-                resultsJson.textContent = JSON.stringify(data, null, 2);
+                if (data.analysisId) {
+                    // Poll for status every 3 seconds
+                    analysisInterval = setInterval(() => checkAnalysisStatus(data.analysisId), 3000);
+                } else {
+                    throw new Error('No analysis ID received');
+                }
                 
             } catch (error) {
                 console.error('Error:', error);
                 alert('An error occurred while analyzing the website. Please try again.');
                 loading.classList.add('hidden');
+                clearInterval(analysisInterval);
             }
         });
     </script>

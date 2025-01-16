@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import { analyzeBusiness } from './business-analyzer.js';
 import { saveAnalysis } from './db.js';
-import { sheetsService } from './sheets.js';
 
 async function runTest() {
   try {
@@ -24,11 +23,6 @@ async function runTest() {
     console.log('Saving to MongoDB...');
     await saveAnalysis(bkb);
     console.log('Successfully saved to MongoDB');
-
-    // Save to Google Sheets
-    console.log('\nSaving to Google Sheets...');
-    await sheetsService.appendAnalysis(bkb);
-    console.log('Successfully saved to Google Sheets');
 
   } catch (error) {
     console.error('Error during analysis:', error);
