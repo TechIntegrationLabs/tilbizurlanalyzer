@@ -67,6 +67,7 @@ class GoogleSheetsService {
 
   async initializeSheet() {
     try {
+      // --- UPDATED: Removed the second 'socialPresenceScore' from the array
       const headers = [
         'analysisDate',
         'urlAnalyzed',
@@ -92,7 +93,7 @@ class GoogleSheetsService {
         'socialPresenceScore',
         'socialPresencePlatformsTwitterPresent',
         'socialPresencePlatformsTwitterUrl',
-        'socialPresenceScore',
+        // REMOVED DUPLICATE 'socialPresenceScore' HERE
         'socialPresenceSocialUrlsForDeeperScrape0',
         'socialPresenceSocialUrlsForDeeperScrape1',
         'socialPresenceSocialUrlsForDeeperScrape2',

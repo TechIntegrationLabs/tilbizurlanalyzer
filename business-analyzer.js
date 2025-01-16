@@ -341,6 +341,10 @@ Return ONLY the valid JSON object.`
       aiAnalysis = { error: 'AI analysis failed' };
     }
 
+    // ----------------------------
+    // --- UPDATED: Merge Additional Data ---
+    // ----------------------------
+
     // Merge technical metrics with AI analysis
     aiAnalysis.technical_metrics = {
       ...aiAnalysis.technical_metrics,
@@ -358,13 +362,30 @@ Return ONLY the valid JSON object.`
       ...bkb.social_presence
     };
 
-    // Store the analysis results with exact column names
+    // --- UPDATED: If AI doesn't provide a website, fill with the analyzed URL
+    if (!aiAnalysis.basic_info.website_url) {
+      aiAnalysis.basic_info.website_url = url;
+    }
+
+    // --- UPDATED: If no address from extraction, but AI found one
+    if (
+      aiAnalysis.basic_info?.physical_address &&
+      (!bkb.contact_info.address || bkb.contact_info.address.length === 0)
+    ) {
+      bkb.contact_info.address = [aiAnalysis.basic_info.physical_address];
+    }
+
+    // ----------------------------
+    // 6. Store the analysis results with exact column names
+    // ----------------------------
+    // --- UPDATED: Use `business_description` instead of `description`
     const analysisResults = {
       analysisDate: new Date().toISOString(),
       urlAnalyzed: url,
       businessName: bkb.contact_info?.business_name || '',
       industry: aiAnalysis.basic_info?.industry || '',
-      description: aiAnalysis.basic_info?.description || '',
+      // Use business_description from AI
+      description: aiAnalysis.basic_info?.business_description || '',
       businessType: aiAnalysis.basic_info?.business_type || '',
       yearEstablished: aiAnalysis.basic_info?.year_established || '',
       mainOfferings: Array.isArray(aiAnalysis.business_operations?.products_services) 
@@ -378,6 +399,7 @@ Return ONLY the valid JSON object.`
       demographics: aiAnalysis.target_market?.demographics || '',
       marketPositioning: aiAnalysis.target_market?.market_positioning || '',
       brandTone: aiAnalysis.brand_analysis?.tone || '',
+      // Convert array to comma-separated string
       keyMessages: Array.isArray(aiAnalysis.brand_analysis?.key_messages) 
         ? aiAnalysis.brand_analysis.key_messages.join(', ') || ''
         : '',
@@ -417,9 +439,10 @@ Return ONLY the valid JSON object.`
       contactInfoPhone10: bkb.contact_info?.phone?.[10] || '',
       contactInfoPhone11: bkb.contact_info?.phone?.[11] || '',
       contactInfoPhone12: bkb.contact_info?.phone?.[12] || '',
+      // Again, use business_description for AI fields
       aiAnalysisBasicInfoBusinessName: aiAnalysis.basic_info?.business_name || '',
       aiAnalysisBasicInfoIndustry: aiAnalysis.basic_info?.industry || '',
-      aiAnalysisBasicInfoDescription: aiAnalysis.basic_info?.description || '',
+      aiAnalysisBasicInfoDescription: aiAnalysis.basic_info?.business_description || '',
       aiAnalysisBasicInfoBusinessType: aiAnalysis.basic_info?.business_type || '',
       aiAnalysisBasicInfoYearEstablished: aiAnalysis.basic_info?.year_established || '',
       aiAnalysisProductsServicesMainOfferings0: aiAnalysis.business_operations?.products_services?.[0] || '',
@@ -458,6 +481,7 @@ Return ONLY the valid JSON object.`
       contactInfoEmail0: bkb.contact_info?.email?.[0] || '',
       contactInfoAddress0: bkb.contact_info?.address?.[0] || '',
       contactInfoAddress1: bkb.contact_info?.address?.[1] || '',
+      // --- UPDATED: Shortened "all" to avoid the entire raw HTML ---
       all: JSON.stringify({
         metadata: {
           analysis_date: new Date().toISOString(),
@@ -468,8 +492,8 @@ Return ONLY the valid JSON object.`
         technical_metrics: bkb.technical_metrics,
         social_presence: bkb.social_presence,
         contact_info: bkb.contact_info,
-        ai_analysis: aiAnalysis,
-        raw_text: accumulatedText
+        ai_analysis: aiAnalysis
+        // If you really need raw HTML, add: raw_text: accumulatedText
       })
     };
 
@@ -483,6 +507,7 @@ Return ONLY the valid JSON object.`
   }
 }
 
+// --- UPDATED: Stricter phoneRegex for extractContactInfo
 async function analyzeTechnicalMetrics(page) {
   const metrics = {};
   
@@ -521,7 +546,6 @@ async function analyzeTechnicalMetrics(page) {
         payment: []
       };
       
-      // Check for common technologies
       const scripts = Array.from(document.scripts).map(s => s.src);
       if (scripts.some(s => s.includes('wp-'))) technologies.cms = 'WordPress';
       if (scripts.some(s => s.includes('shopify'))) technologies.cms = 'Shopify';
@@ -584,7 +608,6 @@ async function analyzeSocialPresence(page) {
     for (const [platform, selector] of Object.entries(SELECTORS.SOCIAL_MEDIA)) {
       const links = await page.$$(selector);
       if (links.length > 0) {
-        // get href from first matched link
         const href = await page.evaluate(el => el.href, links[0]);
         social.platforms[platform] = {
           present: true,
@@ -623,12 +646,16 @@ async function analyzeSocialPresence(page) {
   return social;
 }
 
+// --- UPDATED: Stricter phone regex and deduplicate
 async function extractContactInfo(page) {
   const contactInfo = {
     email: [],
     phone: [],
     address: []
   };
+
+  // A stricter phone pattern: (xxx) xxx-xxxx or xxx.xxx.xxxx or xxx-xxx-xxxx
+  const phoneRegex = /\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}/;
   
   try {
     // Extract email addresses
@@ -649,15 +676,16 @@ async function extractContactInfo(page) {
       for (const el of elements) {
         const text = await page.evaluate(el => el.textContent, el);
         const href = await page.evaluate(el => el.href, el);
-        // basic phone matching
-        if (
-          text.match(/[\d\-\(\)\.\s]{7,}/) || // allow parentheses, dashes, etc.
-          (href && href.includes('tel:'))
-        ) {
+        
+        // Check phoneRegex or tel:
+        if (phoneRegex.test(text) || (href && href.includes('tel:'))) {
           contactInfo.phone.push(text.trim());
         }
       }
     }
+    
+    // Deduplicate phone
+    contactInfo.phone = [...new Set(contactInfo.phone)];
     
     // Extract address
     const addressElements = await page.$$(SELECTORS.BUSINESS.address);
