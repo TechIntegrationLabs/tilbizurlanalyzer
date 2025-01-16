@@ -6,6 +6,7 @@ import { sheetsService } from './sheets.js';
 import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,6 +18,32 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
+
+// Function to send data to Make.com webhook
+async function sendToMake(data) {
+  try {
+    if (!process.env.MAKE_WEBHOOK_URL) {
+      console.warn('MAKE_WEBHOOK_URL not set in environment variables');
+      return;
+    }
+
+    const response = await fetch(process.env.MAKE_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Make.com webhook failed: ${response.statusText}`);
+    }
+
+    console.log('Data sent to Make.com successfully');
+  } catch (error) {
+    console.error('Error sending data to Make.com:', error);
+  }
+}
 
 // API endpoint to analyze a URL
 app.post('/api/analyze', async (req, res) => {
@@ -44,6 +71,9 @@ app.post('/api/analyze', async (req, res) => {
 
     // Save to Google Sheets
     await sheetsService.appendAnalysis(analysis);
+
+    // Send to Make.com webhook
+    await sendToMake(analysis);
 
     // Return results
     res.json({
