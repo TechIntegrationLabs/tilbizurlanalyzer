@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { analyzeBusiness } from './business-analyzer.js';
-import { saveAnalysis, getDatabase } from './db.js';
+import { getDatabase } from './db.js';
 import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -14,28 +14,38 @@ const __dirname = dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware: Debugging
+/**
+ * 1) Debug Middleware: Logs all requests (including OPTIONS preflight)
+ */
 app.use((req, res, next) => {
   console.log(`[DEBUG] ${req.method} request to ${req.url}`);
   console.log(`[DEBUG] Headers:`, req.headers);
   next();
 });
 
-// Middleware: CORS
+/**
+ * 2) CORS Middleware:
+ *    - Update "origin" array to include *all* the frontend URLs you use.
+ *    - If you want to allow everything during debugging, use app.use(cors()) with no config object.
+ */
 app.use(cors({
   origin: [
     'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--5173--1b4252dd.local-credentialless.webcontainer-api.io',
-    'https://bizanal.evolvmybiz.com' // Add other origins here if necessary
+    'https://bizanal.evolvmybiz.com'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-// Middleware: JSON Parsing
+/**
+ * 3) JSON Parsing + Static
+ */
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
-// Function: Send data to Make.com webhook
+/**
+ * Helper: Send data to Make.com webhook
+ */
 async function sendToMake(data) {
   try {
     if (!process.env.MAKE_WEBHOOK_URL) {
@@ -59,11 +69,16 @@ async function sendToMake(data) {
   }
 }
 
-// POST /analyze: Submit a new analysis request
-app.post('/analyze', async (req, res) => {
+/**
+ * 4) POST /api/analyze
+ *    - Match your frontend call: "https://.../api/analyze"
+ */
+app.post('/api/analyze', async (req, res) => {
   try {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ error: 'URL is required' });
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
 
     const db = await getDatabase();
     const initialAnalysis = {
@@ -72,7 +87,8 @@ app.post('/analyze', async (req, res) => {
       startTime: new Date(),
       error: null
     };
-    const result = await db.collection('business_analyses').insertOne(initialAnalysis);
+    const result = await db.collection('business_analyses')
+      .insertOne(initialAnalysis);
     const analysisId = result.insertedId;
 
     // Asynchronous analysis process
@@ -91,28 +107,53 @@ app.post('/analyze', async (req, res) => {
 
         await db.collection('business_analyses').updateOne(
           { _id: analysisId },
-          { $set: { ...analysis, status: 'completed', completedTime: new Date() } }
+          { 
+            $set: {
+              ...analysis,
+              status: 'completed',
+              completedTime: new Date()
+            }
+          }
         );
 
+        // Send to Make.com webhook
         await sendToMake(analysis);
+
       } catch (error) {
         console.error('Analysis error:', error);
         await db.collection('business_analyses').updateOne(
           { _id: analysisId },
-          { $set: { status: 'error', error: error.message, completedTime: new Date() } }
+          {
+            $set: {
+              status: 'error',
+              error: error.message,
+              completedTime: new Date()
+            }
+          }
         );
       }
     })();
 
-    res.json({ status: 'processing', analysisId: analysisId.toString() });
+    // Return the initial response
+    return res.json({
+      status: 'processing',
+      analysisId: analysisId.toString()
+    });
+
   } catch (error) {
     console.error('Request error:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    return res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
   }
 });
 
-// GET /status/:analysisId: Check analysis status
-app.get('/status/:analysisId', async (req, res) => {
+/**
+ * 5) GET /api/status/:analysisId
+ *    - For retrieving the status of a particular analysis
+ */
+app.get('/api/status/:analysisId', async (req, res) => {
   try {
     const { analysisId } = req.params;
     if (!ObjectId.isValid(analysisId)) {
@@ -120,8 +161,12 @@ app.get('/status/:analysisId', async (req, res) => {
     }
 
     const db = await getDatabase();
-    const analysis = await db.collection('business_analyses').findOne({ _id: new ObjectId(analysisId) });
-    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+    const analysis = await db.collection('business_analyses')
+      .findOne({ _id: new ObjectId(analysisId) });
+
+    if (!analysis) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
 
     const response = {
       status: analysis.status,
@@ -129,17 +174,28 @@ app.get('/status/:analysisId', async (req, res) => {
       completedTime: analysis.completedTime
     };
 
-    if (analysis.error) response.error = analysis.error;
-    if (analysis.status === 'completed') response.data = analysis;
+    if (analysis.error) {
+      response.error = analysis.error;
+    }
 
-    res.json(response);
+    if (analysis.status === 'completed') {
+      response.data = analysis;
+    }
+
+    return res.json(response);
+
   } catch (error) {
     console.error('Status check error:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    return res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
   }
 });
 
-// Start server
+/**
+ * 6) Start the server
+ */
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
