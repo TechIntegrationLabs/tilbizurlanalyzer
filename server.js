@@ -5,7 +5,7 @@ import { getDatabase } from './db.js';
 import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import fetch from 'node-fetch';
+import fetch from 'node-fetch/esm'; // Update node-fetch import to use proper ESM syntax
 import { ObjectId } from 'mongodb';
 
 const __filename = fileURLToPath(import.meta.url);
