@@ -29,12 +29,7 @@ app.use((req, res, next) => {
  *    - If you want to allow everything during debugging, use app.use(cors()) with no config object.
  */
 app.use(cors({
-  origin: [
-    'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--5173--1b4252dd.local-credentialless.webcontainer-api.io',
-    'https://bizanal.evolvmybiz.com'
-  ],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  origin: '*'
 }));
 
 /**
