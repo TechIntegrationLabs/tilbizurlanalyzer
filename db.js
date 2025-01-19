@@ -1,8 +1,17 @@
 import { MongoClient } from 'mongodb';
 import 'dotenv/config';
 
-const uri = process.env.MONGODB_URI || 'mongodb+srv://techintegrationlabs:Verify1@bizanalysisresults.nwm4z.mongodb.net/';
-const client = new MongoClient(uri);
+const uri = process.env.MONGODB_URI;
+const options = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  ssl: true,
+  tls: true,
+  retryWrites: true,
+  w: 'majority'
+};
+
+const client = new MongoClient(uri, options);
 
 let db;
 
