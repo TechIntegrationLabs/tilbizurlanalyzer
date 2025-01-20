@@ -1,11 +1,20 @@
-# Environment variables
-.env
-
-# Notes file containing sensitive information
-notes
-
-# Node modules
+# Ignore node_modules directory
 node_modules/
 
-# Logs
+# Ignore log files
 *.log
+
+# Ignore environment variable files
+.env
+
+# Ignore build directories
+dist/
+build/
+
+# Ignore temporary files
+*.tmp
+*.swp
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
