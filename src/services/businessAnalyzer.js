@@ -160,11 +160,11 @@ async function analyzeBusiness({
   try {
     console.log('Launching browser...');
     browser = await puppeteer.launch(
-    //   {
-    //   executablePath: executablePath(),
-    //   headless: config.headless,
-    //   args: ['--no-sandbox', '--disable-setuid-sandbox']
-    // }
+      {
+      executablePath: executablePath(),
+      headless: config.headless,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
   );
 
     // ----------------------------
