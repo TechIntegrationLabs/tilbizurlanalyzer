@@ -1,12 +1,24 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import EventSourceResponse
 from redis import Redis
 import json
 import os
 import asyncio
+import uuid
+from app.tasks.analysis import process_analysis
+from app.utils.exceptions import AnalysisError
 
 router = APIRouter()
 redis = Redis.from_url(os.getenv("REDIS_URL"))
+
+@router.post("/start-analysis", status_code=status.HTTP_202_ACCEPTED)
+async def start_analysis(url: str):
+    analysis_id = str(uuid.uuid4())
+    try:
+        process_analysis.delay(analysis_id, url)
+        return {"analysis_id": analysis_id}
+    except Exception as e:
+        raise AnalysisError(analysis_id=analysis_id, message=str(e))
 
 @router.get("/analysis/{analysis_id}")
 async def stream_analysis(analysis_id: str):
