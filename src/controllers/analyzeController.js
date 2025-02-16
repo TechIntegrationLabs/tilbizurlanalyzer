@@ -78,3 +78,17 @@ export const getAnalysisStatus = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch analysis' });
   }
 };
+export const receiveAnalysis = async (req, res) => {
+  const { url } = req.query;
+  console.log(req.body, 'req.body', url);
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  try {
+    const analysis = await MakeAnalysis.create({ url, result: req.body });
+
+    res.status(200).json({ message: 'Analysis received', analysis });
+  } catch (error) {
+    console.error('Error fetching analysis:', error);
+    res.status(500).json({ error: 'Failed to fetch analysis' });
+  }
+};
